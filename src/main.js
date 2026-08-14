@@ -1643,9 +1643,10 @@ async function fetchBusArrivals(busStopCode = "83139") {
 }
 
 /**
- * 60-Second Auto-Poll & Refresh Timer
+ * Auto-Poll & Refresh Timers (Carparks every 60s, Bus Arrivals every 20s)
  */
 function startRefreshTimer() {
+  // 60s general refresh
   state.countdownIntervalId = setInterval(() => {
     state.refreshCountdown--;
     if (state.refreshCountdown <= 0) {
@@ -1657,6 +1658,13 @@ function startRefreshTimer() {
       elements.refreshCounter.textContent = `${state.refreshCountdown}s`;
     }
   }, 1000);
+
+  // 20s official LTA v3 BusArrival refresh
+  setInterval(() => {
+    const busStopInput = document.getElementById("bus-stop-code-input");
+    const code = busStopInput?.value?.trim() || "83139";
+    fetchBusArrivals(code);
+  }, 20000);
 }
 
 /**
