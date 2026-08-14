@@ -1,0 +1,177 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Roboto+Mono:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200");
+
+:root {
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Roboto Mono", monospace;
+  
+  /* Bento Grid Theme Color Tokens */
+  --bento-bg: #f8fafc;
+  --bento-card-bg: #ffffff;
+  --bento-border: #0f172a;
+  --bento-shadow: 4px 4px 0px 0px rgba(15, 23, 42, 1);
+  --bento-shadow-sm: 2px 2px 0px 0px rgba(15, 23, 42, 1);
+  --bento-shadow-lg: 6px 6px 0px 0px rgba(15, 23, 42, 1);
+  --bento-shadow-blue: 0px 4px 0px 0px rgba(29, 78, 216, 1);
+  --bento-shadow-emerald: 0px 4px 0px 0px rgba(5, 150, 105, 1);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f8fafc;
+  color: #0f172a;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Bento Shadows */
+.bento-card {
+  background-color: #ffffff;
+  border: 2px solid #0f172a;
+  border-radius: 1.5rem; /* 24px */
+  box-shadow: var(--bento-shadow);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.bento-card-hover:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0px 0px rgba(15, 23, 42, 1);
+}
+
+.bento-card-hover:active {
+  transform: translate(2px, 2px);
+  box-shadow: var(--bento-shadow-sm);
+}
+
+.bento-btn {
+  border: 2px solid #0f172a;
+  box-shadow: var(--bento-shadow-sm);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.bento-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px 0px rgba(15, 23, 42, 1);
+}
+
+.bento-btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px 0px rgba(15, 23, 42, 1);
+}
+
+/* Material Symbols Icon Helper */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  vertical-align: middle;
+}
+
+/* Focus Visible for WCAG 2.1 AA keyboard accessibility */
+:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* Skip to main content link for screen readers & keyboard users */
+.skip-link {
+  position: absolute;
+  top: -60px;
+  left: 12px;
+  background: #0f172a;
+  color: #ffffff;
+  padding: 10px 20px;
+  z-index: 9999;
+  font-weight: 700;
+  border-radius: 12px;
+  border: 2px solid #ffffff;
+  box-shadow: var(--bento-shadow);
+  transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+  top: 12px;
+}
+
+/* Custom leaflet tweaks */
+.leaflet-container {
+  font-family: var(--font-sans);
+  border-radius: 1.25rem;
+  z-index: 10;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 1.25rem;
+  border: 2px solid #0f172a;
+  box-shadow: var(--bento-shadow);
+  padding: 4px;
+}
+
+.leaflet-popup-content {
+  margin: 12px 14px;
+  line-height: 1.4;
+}
+
+.leaflet-popup-tip {
+  border: 2px solid #0f172a;
+}
+
+/* Lot Badges - Bento Style */
+.badge-available-high {
+  background-color: #ecfdf5;
+  color: #065f46;
+  border: 2px solid #059669;
+}
+
+.badge-available-med {
+  background-color: #fffbeb;
+  color: #92400e;
+  border: 2px solid #d97706;
+}
+
+.badge-available-low {
+  background-color: #fef2f2;
+  color: #991b1b;
+  border: 2px solid #dc2626;
+}
+
+/* Map pin pulse */
+@keyframes ring-expand {
+  0% { transform: scale(0.8); opacity: 0.9; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.ping-ring {
+  animation: ring-expand 2s infinite ease-out;
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

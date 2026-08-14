@@ -1,0 +1,6 @@
+{
+  "name": "Singapore Carpark Overseer",
+  "description": "Real-time Singapore carpark overseer with trip route planning, shortest driving paths, 1 km destination parking estimates, rates integration, and smart lowest-rate/highest-availability diversions powered by LTA DataMall API.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
