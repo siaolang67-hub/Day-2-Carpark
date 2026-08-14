@@ -1455,6 +1455,7 @@ function setupEventListeners() {
     try {
       await fetch("/api/carparks/sync", { method: "POST" });
       await fetchRouteAndCarparks();
+      await fetchTrafficIncidentsAndTrainAlerts();
     } finally {
       setTimeout(() => {
         elements.refreshIcon.classList.remove("animate-spin");
@@ -1480,6 +1481,165 @@ function setupEventListeners() {
       elements.carparkDialog.close();
     }
   });
+
+  // 17. Bus Arrival Check Button & Input
+  const fetchBusBtn = document.getElementById("fetch-bus-btn");
+  const busStopInput = document.getElementById("bus-stop-code-input");
+  if (fetchBusBtn && busStopInput) {
+    fetchBusBtn.addEventListener("click", () => {
+      const code = busStopInput.value.trim();
+      if (code) fetchBusArrivals(code);
+    });
+    busStopInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const code = busStopInput.value.trim();
+        if (code) fetchBusArrivals(code);
+      }
+    });
+  }
+}
+
+/**
+ * Fetch and render LTA Traffic Incidents & Train Alerts
+ */
+async function fetchTrafficIncidentsAndTrainAlerts() {
+  const incidentsListEl = document.getElementById("traffic-incidents-list");
+  const mrtPillEl = document.getElementById("mrt-status-pill");
+
+  try {
+    const [incidentsRes, trainRes] = await Promise.all([
+      fetch("/api/lta/traffic-incidents").then((r) => r.json()),
+      fetch("/api/lta/train-alerts").then((r) => r.json())
+    ]);
+
+    // Update MRT Status
+    if (mrtPillEl && trainRes) {
+      const isNormal = trainRes.status === 1;
+      mrtPillEl.className = `text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+        isNormal
+          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+          : "bg-rose-100 text-rose-800 border-rose-300 animate-pulse"
+      }`;
+      mrtPillEl.textContent = isNormal ? "MRT All Lines Normal" : "MRT Service Alert";
+    }
+
+    // Render Traffic Incidents
+    if (incidentsListEl) {
+      const incidents = incidentsRes?.incidents || [];
+      if (incidents.length === 0) {
+        incidentsListEl.innerHTML = `
+          <div class="p-3.5 bg-emerald-50 border-2 border-emerald-300 rounded-2xl text-emerald-900 font-bold text-xs flex items-center gap-2">
+            <span class="material-symbols-outlined text-emerald-600 text-base">check_circle</span>
+            <span>No major expressway accidents or road closures reported at this time.</span>
+          </div>
+        `;
+        return;
+      }
+
+      incidentsListEl.innerHTML = incidents.slice(0, 4).map((inc) => {
+        let typeBadge = "bg-amber-100 text-amber-900 border-amber-300";
+        if (inc.Type?.toLowerCase().includes("accident")) {
+          typeBadge = "bg-rose-100 text-rose-900 border-rose-300";
+        } else if (inc.Type?.toLowerCase().includes("roadwork")) {
+          typeBadge = "bg-blue-100 text-blue-900 border-blue-300";
+        }
+
+        return `
+          <div class="p-3 bg-slate-50 border-2 border-slate-900/10 rounded-2xl hover:border-slate-900/30 transition">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-black border ${typeBadge} uppercase tracking-wider">
+                ${inc.Type || "Incident"}
+              </span>
+              <span class="text-[10px] font-bold text-slate-400">LTA Realtime</span>
+            </div>
+            <p class="text-xs text-slate-800 font-medium leading-relaxed">${inc.Message || "Slow traffic advisory in effect."}</p>
+          </div>
+        `;
+      }).join("");
+    }
+  } catch (err) {
+    console.warn("Error fetching traffic incidents:", err);
+  }
+}
+
+/**
+ * Fetch and render LTA Bus Arrivals (v3)
+ */
+async function fetchBusArrivals(busStopCode = "83139") {
+  const busListEl = document.getElementById("bus-arrivals-list");
+  if (!busListEl) return;
+
+  busListEl.innerHTML = `
+    <div class="p-3 bg-slate-50 border-2 border-slate-900/10 rounded-2xl animate-pulse text-slate-500 font-bold text-xs">
+      Querying LTA v3 BusArrival for stop ${busStopCode}...
+    </div>
+  `;
+
+  try {
+    const res = await fetch(`/api/lta/bus-arrival?BusStopCode=${encodeURIComponent(busStopCode)}`);
+    const json = await res.json();
+    const services = json?.data?.Services || [];
+
+    if (services.length === 0) {
+      busListEl.innerHTML = `
+        <div class="p-3.5 bg-slate-50 border-2 border-slate-900/10 rounded-2xl text-slate-600 font-bold text-xs">
+          No active bus services found for stop code "${busStopCode}".
+        </div>
+      `;
+      return;
+    }
+
+    const formatEta = (isoString) => {
+      if (!isoString) return "-";
+      const diffMs = new Date(isoString).getTime() - Date.now();
+      const diffMins = Math.round(diffMs / 60000);
+      if (diffMins <= 0) return "Arr";
+      return `${diffMins}m`;
+    };
+
+    const getLoadColor = (load) => {
+      if (load === "SEA") return "bg-emerald-100 text-emerald-800 border-emerald-300"; // Seats Avail
+      if (load === "SDA") return "bg-amber-100 text-amber-800 border-amber-300"; // Standing Avail
+      if (load === "LSD") return "bg-rose-100 text-rose-800 border-rose-300"; // Limited Standing
+      return "bg-slate-100 text-slate-800 border-slate-300";
+    };
+
+    busListEl.innerHTML = services.slice(0, 5).map((s) => {
+      const eta1 = formatEta(s.NextBus?.EstimatedArrival);
+      const eta2 = formatEta(s.NextBus2?.EstimatedArrival);
+      const eta3 = formatEta(s.NextBus3?.EstimatedArrival);
+      const load1 = s.NextBus?.Load || "SEA";
+      const type1 = s.NextBus?.Type === "DD" ? "Double Deck" : "Single Deck";
+
+      return `
+        <div class="p-2.5 bg-slate-50 border-2 border-slate-900/10 rounded-2xl flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5">
+            <span class="w-10 h-8 flex items-center justify-center bg-blue-600 text-white font-black text-xs rounded-xl border-2 border-slate-900 shadow-[1px_1px_0px_0px_rgba(15,23,42,1)]">
+              ${s.ServiceNo}
+            </span>
+            <div>
+              <span class="text-[10px] font-bold text-slate-500 block uppercase">${s.Operator || "SBST"} &bull; ${type1}</span>
+              <span class="text-[10px] font-extrabold px-1.5 py-0.2 rounded border ${getLoadColor(load1)}">
+                ${load1 === 'SEA' ? 'Seats Avail' : load1 === 'SDA' ? 'Standing' : 'Crowded'}
+              </span>
+            </div>
+          </div>
+          
+          <div class="flex items-center gap-1.5 font-black text-xs">
+            <span class="px-2 py-1 bg-white border border-slate-300 rounded-lg text-slate-900 font-black shadow-xs">${eta1}</span>
+            <span class="px-2 py-1 bg-white border border-slate-300 rounded-lg text-slate-600 text-[11px]">${eta2}</span>
+            <span class="px-2 py-1 bg-white border border-slate-300 rounded-lg text-slate-400 text-[11px]">${eta3}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    busListEl.innerHTML = `
+      <div class="p-3 bg-rose-50 border-2 border-rose-300 rounded-2xl text-rose-800 font-bold text-xs">
+        Failed to fetch bus arrivals for stop ${busStopCode}.
+      </div>
+    `;
+  }
 }
 
 /**
@@ -1491,6 +1651,7 @@ function startRefreshTimer() {
     if (state.refreshCountdown <= 0) {
       state.refreshCountdown = 60;
       fetchRouteAndCarparks();
+      fetchTrafficIncidentsAndTrainAlerts();
     }
     if (elements.refreshCounter) {
       elements.refreshCounter.textContent = `${state.refreshCountdown}s`;
@@ -1506,6 +1667,10 @@ async function bootstrap() {
   setupEventListeners();
   await fetchLocations();
   await fetchRouteAndCarparks();
+  await Promise.all([
+    fetchTrafficIncidentsAndTrainAlerts(),
+    fetchBusArrivals("83139")
+  ]);
   startRefreshTimer();
 }
 

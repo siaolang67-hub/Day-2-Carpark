@@ -501,6 +501,82 @@
 
       </section>
 
+      <!-- OUTCOME SECTION 5: LTA LIVE TRAFFIC INCIDENTS & TRANSIT OVERSEER -->
+      <section aria-labelledby="traffic-transit-heading" class="space-y-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-rose-600 text-2xl" aria-hidden="true">traffic</span>
+            <h2 id="traffic-transit-heading" class="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+              LTA Live Traffic Incidents & Public Transit
+            </h2>
+          </div>
+          <span class="text-xs font-black bg-rose-50 text-rose-800 border-2 border-rose-600 px-3 py-1 rounded-xl">
+            LTA DataMall Active Feeds
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          
+          <!-- Traffic Incidents & MRT Alerts (6 Cols) -->
+          <div class="lg:col-span-6 bg-white border-2 border-slate-900 rounded-3xl p-5 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] space-y-4">
+            <div class="flex items-center justify-between pb-2 border-b-2 border-slate-100">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-rose-600 text-lg">warning</span>
+                <h3 class="font-black text-base text-slate-900 tracking-tight">Road Incidents & MRT Status</h3>
+              </div>
+              <span id="mrt-status-pill" class="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                MRT Normal
+              </span>
+            </div>
+
+            <!-- Incidents Feed Container -->
+            <div id="traffic-incidents-list" class="space-y-2.5 max-h-[220px] overflow-y-auto pr-1 text-xs">
+              <div class="p-3 bg-slate-50 border-2 border-slate-900/10 rounded-2xl animate-pulse text-slate-500 font-bold">
+                Fetching latest Singapore traffic incidents from LTA DataMall...
+              </div>
+            </div>
+          </div>
+
+          <!-- Next Bus Arrivals at Stop (v3) (6 Cols) -->
+          <div class="lg:col-span-6 bg-white border-2 border-slate-900 rounded-3xl p-5 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] space-y-4">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-2 border-b-2 border-slate-100">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-blue-600 text-lg">directions_bus</span>
+                <h3 class="font-black text-base text-slate-900 tracking-tight">Next Bus Arrivals (v3)</h3>
+              </div>
+              
+              <!-- Bus Stop Code Input -->
+              <div class="flex items-center gap-1.5 w-full sm:w-auto">
+                <input
+                  id="bus-stop-code-input"
+                  type="text"
+                  value="83139"
+                  maxlength="6"
+                  placeholder="Stop Code (e.g. 83139)"
+                  class="w-24 px-2 py-1 bg-slate-50 border-2 border-slate-900 rounded-lg text-xs font-bold text-slate-800 focus:outline-hidden text-center shadow-[1px_1px_0px_0px_rgba(15,23,42,1)]"
+                  aria-label="Enter 5-digit Singapore bus stop code"
+                />
+                <button
+                  id="fetch-bus-btn"
+                  type="button"
+                  class="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-lg border-2 border-slate-900 shadow-[1px_1px_0px_0px_rgba(15,23,42,1)] cursor-pointer"
+                >
+                  Check
+                </button>
+              </div>
+            </div>
+
+            <!-- Bus Arrivals Grid Container -->
+            <div id="bus-arrivals-list" class="space-y-2 max-h-[220px] overflow-y-auto pr-1 text-xs">
+              <div class="p-3 bg-slate-50 border-2 border-slate-900/10 rounded-2xl animate-pulse text-slate-500 font-bold">
+                Loading live bus timings for stop 83139...
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
     </main>
 
     <!-- ROUTE STEPS MODAL DIALOG -->
