@@ -1,16 +1,14 @@
 /**
- * Singapore Carpark Availability & Rates Overseer
+ * Singapore Carpark Availability, Driving Route & Rates Overseer
  * Pure Vanilla JavaScript (ES6+) Implementation
- * Theme: Bento Grid
  * Features:
- *  - Start point & Destination definition (with swap & GPS)
- *  - Shortest driving route calculation & interactive map polyline
- *  - Turn-by-turn route steps modal dialog
- *  - 1 KM destination parking lots & occupancy estimation
- *  - Smart diversion recommendations (Lowest Rate vs Highest Availability)
- *  - Multi-factor carpark rankings & comprehensive rate matrices
- *  - Live 60s auto-polling with LTA DataMall sync status
- * Standards: WCAG 2.1 AA Compliant & Material Design Principles
+ *  - Prominent Interactive Map at Top of Page with live pins & route polyline
+ *  - Guided Step-by-Step Trip Planner (Origin, Destination, Stay Duration, Vehicle)
+ *  - Start Trip & Find Parking CTA button with loading states
+ *  - Driving Route Outcome (Shortest distance, driving duration, turn steps)
+ *  - Recommended Parking Locations (Top Pick, Lowest Rates, Highest Lots, Closest Walk)
+ *  - Smart Detour & Diversion Optimizer (Cost Savings vs Walking Time)
+ *  - Complete Carpark Rates Directory & 1-Click Google Maps Integration
  */
 
 import L from "leaflet";
@@ -41,7 +39,6 @@ const state = {
   agencyFilter: "ALL",
   searchQuery: "",
   sortBy: "recommended", // 'recommended' | 'distance' | 'lots' | 'price'
-  activeView: "split", // 'split' | 'map' | 'list'
   
   // Data retrieved from API
   locations: [],
@@ -68,10 +65,10 @@ const state = {
   lastSyncTime: null,
   syncSource: "LTA_VERIFIED_DATASET",
   
-  // UI timers
+  // UI timers & state
   refreshCountdown: 60,
-  pollIntervalId: null,
   countdownIntervalId: null,
+  isCalculating: false,
   
   // Leaflet references
   map: null,
@@ -87,7 +84,7 @@ const state = {
 const elements = {
   srAnnouncements: document.getElementById("sr-announcements"),
   
-  // Trip Planner elements
+  // Trip Planner & Guide elements
   startLocationSelect: document.getElementById("start-location-select"),
   swapLocationsBtn: document.getElementById("swap-locations-btn"),
   locationSelect: document.getElementById("location-select"),
@@ -99,19 +96,18 @@ const elements = {
   agencyChips: document.querySelectorAll(".agency-chip"),
   searchInput: document.getElementById("carpark-search-input"),
   sortButtons: document.querySelectorAll(".sort-btn"),
-  viewTabs: document.querySelectorAll(".view-tab-btn"),
-  viewContainer: document.getElementById("view-container"),
-  mapColumn: document.getElementById("map-column"),
-  listColumn: document.getElementById("list-column"),
+  startTripBtn: document.getElementById("start-trip-btn"),
+  presetStartBtns: document.querySelectorAll(".preset-start-btn"),
+  presetDestBtns: document.querySelectorAll(".preset-dest-btn"),
   
-  // Trip Navigation Dashboard
+  // Driving Route Outcome Card
   routeDistanceVal: document.getElementById("route-distance-val"),
   routeDurationVal: document.getElementById("route-duration-val"),
   routeSummaryText: document.getElementById("route-summary-text"),
   routeEndpointsLabel: document.getElementById("route-endpoints-label"),
   viewStepsBtn: document.getElementById("view-steps-btn"),
   
-  // 1 KM Destination Parking Estimate
+  // Destination Parking Estimate Card
   dest1kmAvailableLots: document.getElementById("dest-1km-available-lots"),
   dest1kmFacilitiesCount: document.getElementById("dest-1km-facilities-count"),
   dest1kmOccupancyText: document.getElementById("dest-1km-occupancy-text"),
@@ -121,15 +117,6 @@ const elements = {
   // Smart Diversions
   diversionCardsContainer: document.getElementById("diversion-cards-container"),
   diversionStatusBadgeContainer: document.getElementById("diversion-status-badge-container"),
-  
-  // Counts Summary Elements
-  statLocationCount: document.getElementById("stat-location-count"),
-  statRadiusLabel: document.getElementById("stat-radius-label"),
-  statTargetLocation: document.getElementById("stat-target-location"),
-  statAvailableLots: document.getElementById("stat-available-lots"),
-  statCapacityPct: document.getElementById("stat-capacity-pct"),
-  statAvgRate: document.getElementById("stat-avg-rate"),
-  statLastSync: document.getElementById("stat-last-sync"),
   
   // Recommendations container
   recommendationCardsContainer: document.getElementById("recommendation-cards-container"),
@@ -174,13 +161,13 @@ function announceToScreenReader(message) {
 }
 
 /**
- * Initialize Leaflet Map with Route and Marker Layers
+ * Initialize Leaflet Map at Top of Page
  */
 function initMap() {
   const mapElement = document.getElementById("leaflet-map");
   if (!mapElement) return;
 
-  // Center on destination
+  // Center on Singapore destination
   state.map = L.map("leaflet-map", {
     center: [state.selectedLocation.latitude, state.selectedLocation.longitude],
     zoom: 14,
@@ -193,7 +180,7 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(state.map);
 
-  // Layer groups for clean updates
+  // Layer groups for clean, high-performance updates
   state.routePolylineLayer = L.layerGroup().addTo(state.map);
   state.diversionPolylineLayer = L.layerGroup().addTo(state.map);
   state.carparkMarkersLayer = L.layerGroup().addTo(state.map);
@@ -201,7 +188,7 @@ function initMap() {
   // Click on map to set custom destination coordinate
   state.map.on("click", (e) => {
     const { lat, lng } = e.latlng;
-    setCustomDestination(lat, lng, `Custom Pin (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+    setCustomDestination(lat, lng, `Pinned Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
   });
 
   updateMapLayers();
@@ -213,7 +200,7 @@ function initMap() {
 function updateMapLayers() {
   if (!state.map) return;
 
-  // 1. Start Marker
+  // 1. Start Marker (Origin)
   if (state.startMarker) state.map.removeLayer(state.startMarker);
   const startLatLng = [state.startLocation.latitude, state.startLocation.longitude];
   
@@ -234,7 +221,7 @@ function updateMapLayers() {
     .addTo(state.map)
     .bindPopup(`<b>Start Point (Origin)</b><br>${state.startLocation.name}`);
 
-  // 2. Destination Marker
+  // 2. Destination Marker (Target)
   if (state.centerMarker) state.map.removeLayer(state.centerMarker);
   const destLatLng = [state.selectedLocation.latitude, state.selectedLocation.longitude];
 
@@ -256,7 +243,7 @@ function updateMapLayers() {
     .addTo(state.map)
     .bindPopup(`<b>Target Destination</b><br>${state.selectedLocation.name}`);
 
-  // 3. Shaded 1KM Radius Circle around Destination
+  // 3. Shaded Radius Circle around Destination
   if (state.radiusCircle) state.map.removeLayer(state.radiusCircle);
   state.radiusCircle = L.circle(destLatLng, {
     radius: state.radiusKm * 1000,
@@ -294,7 +281,7 @@ function renderRoutePolylines() {
       opacity: 0.7
     }).addTo(state.routePolylineLayer);
 
-    // 2. Diversion Driving Leg (Start -> Carpark)
+    // 2. Diversion Driving Leg (Start -> Detour Carpark)
     const driveCoords = activeDiv.route.driveLeg?.coordinates || [];
     if (driveCoords.length > 0) {
       // Outer casing line for bold high-contrast Bento style
@@ -327,7 +314,7 @@ function renderRoutePolylines() {
     try {
       const allPoints = [...driveCoords, ...walkCoords, [state.selectedLocation.latitude, state.selectedLocation.longitude]];
       const bounds = L.latLngBounds(allPoints);
-      state.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+      state.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
     } catch (e) {
       console.warn("Could not fit diversion bounds:", e);
     }
@@ -348,7 +335,7 @@ function renderRoutePolylines() {
     // Fit map bounds to show full route from start to destination
     try {
       const bounds = L.latLngBounds(direct.coordinates);
-      state.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+      state.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
     } catch (e) {
       console.warn("Could not fit route bounds:", e);
     }
@@ -356,7 +343,7 @@ function renderRoutePolylines() {
 }
 
 /**
- * Set custom coordinates clicked or obtained from GPS as Destination
+ * Set custom coordinates clicked on map as Destination
  */
 function setCustomDestination(lat, lng, customName) {
   state.selectedLocation = {
@@ -424,6 +411,15 @@ async function fetchRouteAndCarparks() {
   const start = state.startLocation;
   const dest = state.selectedLocation;
 
+  // Set visual calculating feedback on Start Button
+  if (elements.startTripBtn) {
+    elements.startTripBtn.innerHTML = `
+      <span class="material-symbols-outlined text-xl animate-spin">sync</span>
+      <span>Calculating Route & Finding Lots...</span>
+    `;
+    elements.startTripBtn.disabled = true;
+  }
+
   // 1. Fetch Routing & Diversions API
   const routeParams = new URLSearchParams({
     startLat: start.latitude.toString(),
@@ -477,6 +473,14 @@ async function fetchRouteAndCarparks() {
     );
   } catch (err) {
     console.error("Error fetching trip route and carparks:", err);
+  } finally {
+    if (elements.startTripBtn) {
+      elements.startTripBtn.innerHTML = `
+        <span class="material-symbols-outlined text-xl">navigation</span>
+        <span>Start Trip & Find Parking</span>
+      `;
+      elements.startTripBtn.disabled = false;
+    }
   }
 }
 
@@ -486,7 +490,6 @@ async function fetchRouteAndCarparks() {
 function renderAllViews() {
   renderTripDashboard();
   renderDiversionRecommendations();
-  renderCountsSummary();
   renderRecommendationCards();
   renderCarparkList();
   renderMapMarkers();
@@ -521,6 +524,14 @@ function renderTripDashboard() {
     elements.dest1kmAvgRate.textContent = `Avg: $${parking1Km.avgEstimatedCost.toFixed(2)} / ${state.durationHours}h`;
     elements.dest1kmLabel.textContent = `Within 1.0 km of ${state.selectedLocation.name}`;
   }
+
+  // Update map radius hint & badge
+  if (elements.viewCountBadge) {
+    elements.viewCountBadge.textContent = `${state.carparksWithinRadius.length} lots nearby`;
+  }
+  if (elements.mapRadiusHint) {
+    elements.mapRadiusHint.textContent = `${state.radiusKm} km radius (${state.carparksWithinRadius.length} carparks)`;
+  }
 }
 
 /**
@@ -542,14 +553,14 @@ function renderDiversionRecommendations() {
           class="ml-1 text-slate-900 hover:text-rose-700 underline cursor-pointer text-[11px]"
           title="Reset to shortest direct route"
         >
-          Reset
+          Reset to Direct
         </button>
       </div>
     `;
   } else {
     elements.diversionStatusBadgeContainer.innerHTML = `
       <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">
-        AI Smart Detour Optimizer
+        Detour Optimizer
       </span>
     `;
   }
@@ -557,9 +568,8 @@ function renderDiversionRecommendations() {
   if (!diversions || (!diversions.lowestRate && !diversions.highestAvailability)) {
     elements.diversionCardsContainer.innerHTML = `
       <div class="col-span-full p-6 bg-white border-2 border-slate-900 rounded-3xl text-center text-slate-500 font-bold shadow-[3px_3px_0px_0px_rgba(15,23,42,1)]">
-        <span class="material-symbols-outlined text-3xl text-slate-400 mb-1">info</span>
-        <p>No suitable parking diversions found within 1 km of destination.</p>
-        <p class="text-xs text-slate-400 mt-0.5">Direct destination parking remains optimal.</p>
+        <span class="material-symbols-outlined text-3xl text-slate-400 mb-1">check_circle</span>
+        <p>Direct destination parking is already optimal with adequate vacant lots.</p>
       </div>
     `;
     return;
@@ -579,7 +589,7 @@ function renderDiversionRecommendations() {
           <div class="flex items-center justify-between gap-2">
             <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-blue-100 text-blue-900 border-2 border-blue-600 uppercase tracking-tight">
               <span class="material-symbols-outlined text-xs">savings</span>
-              Lowest Rate Diversion
+              Lowest Rate Option
             </span>
             <span class="text-xs font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-300">
               Save ~$${cp.savingsVsAvg.toFixed(2)} vs Avg
@@ -624,9 +634,9 @@ function renderDiversionRecommendations() {
           <button
             type="button"
             onclick="window.showCarparkDetails('${cp.CarParkID}')"
-            class="px-3 py-2 text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border-2 border-slate-900 rounded-xl shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] cursor-pointer"
+            class="px-3.5 py-2 text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border-2 border-slate-900 rounded-xl shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] cursor-pointer"
           >
-            Rate Details
+            Rate Card
           </button>
           <button
             type="button"
@@ -634,7 +644,7 @@ function renderDiversionRecommendations() {
             class="px-4 py-2 text-xs font-black text-white ${isCurrentActive ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'} border-2 border-slate-900 rounded-xl shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] cursor-pointer flex items-center gap-1.5"
           >
             <span class="material-symbols-outlined text-sm">${isCurrentActive ? 'check_circle' : 'alt_route'}</span>
-            <span>${isCurrentActive ? 'Detour Active (Selected)' : 'Divert to Lowest Rate'}</span>
+            <span>${isCurrentActive ? 'Detour Active' : 'Divert to Lowest Rate'}</span>
           </button>
         </div>
       </div>
@@ -653,10 +663,10 @@ function renderDiversionRecommendations() {
           <div class="flex items-center justify-between gap-2">
             <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-900 border-2 border-emerald-600 uppercase tracking-tight">
               <span class="material-symbols-outlined text-xs">space_dashboard</span>
-              Highest Availability Diversion
+              Highest Availability Option
             </span>
             <span class="text-xs font-black text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-300">
-              Guaranteed Space Buffer
+              Guaranteed Lot Buffer
             </span>
           </div>
 
@@ -689,7 +699,7 @@ function renderDiversionRecommendations() {
           </div>
 
           <div class="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-            <strong>Capacity:</strong> ${cp.TotalLots} lots (${Math.round((cp.AvailableLots/Math.max(1,cp.TotalLots))*100)}% vacant) &bull; <span class="text-slate-800 font-bold">${cp.rates.weekdayDay}</span>
+            <strong>Capacity:</strong> ${cp.TotalLots} lots &bull; <span class="text-slate-800 font-bold">${cp.rates.weekdayDay}</span>
           </div>
         </div>
 
@@ -698,9 +708,9 @@ function renderDiversionRecommendations() {
           <button
             type="button"
             onclick="window.showCarparkDetails('${cp.CarParkID}')"
-            class="px-3 py-2 text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border-2 border-slate-900 rounded-xl shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] cursor-pointer"
+            class="px-3.5 py-2 text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border-2 border-slate-900 rounded-xl shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] cursor-pointer"
           >
-            Rate Details
+            Rate Card
           </button>
           <button
             type="button"
@@ -708,7 +718,7 @@ function renderDiversionRecommendations() {
             class="px-4 py-2 text-xs font-black text-white ${isCurrentActive ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'} border-2 border-slate-900 rounded-xl shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] cursor-pointer flex items-center gap-1.5"
           >
             <span class="material-symbols-outlined text-sm">${isCurrentActive ? 'check_circle' : 'alt_route'}</span>
-            <span>${isCurrentActive ? 'Detour Active (Selected)' : 'Divert to High Lots'}</span>
+            <span>${isCurrentActive ? 'Detour Active' : 'Divert to High Lots'}</span>
           </button>
         </div>
       </div>
@@ -739,43 +749,7 @@ window.resetToDirectRoute = function () {
 };
 
 /**
- * 3. Render Live Distance Filtering & Counts Header
- */
-function renderCountsSummary() {
-  const { locationCount, availableLotsCount, totalLotsCapacity, radiusKm } = state.counts;
-
-  elements.statLocationCount.textContent = locationCount.toLocaleString();
-  elements.statRadiusLabel.textContent = `Radius: ${radiusKm} km`;
-  elements.statTargetLocation.textContent = `At ${state.selectedLocation.name}`;
-
-  elements.statAvailableLots.textContent = availableLotsCount.toLocaleString();
-  
-  if (totalLotsCapacity > 0) {
-    const occPct = Math.round(((totalLotsCapacity - availableLotsCount) / totalLotsCapacity) * 100);
-    elements.statCapacityPct.textContent = `${occPct}% occupied (${totalLotsCapacity.toLocaleString()} total)`;
-  } else {
-    elements.statCapacityPct.textContent = `No lots in radius`;
-  }
-
-  // Calculate average cost for carparks in radius
-  if (state.carparksWithinRadius.length > 0) {
-    const avgCost =
-      state.carparksWithinRadius.reduce((sum, cp) => sum + cp.estimatedCost, 0) /
-      state.carparksWithinRadius.length;
-    elements.statAvgRate.textContent = `$${avgCost.toFixed(2)}`;
-  } else {
-    elements.statAvgRate.textContent = `$0.00`;
-  }
-
-  // Last sync timestamp
-  if (state.lastSyncTime) {
-    const time = new Date(state.lastSyncTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    elements.statLastSync.textContent = time;
-  }
-}
-
-/**
- * 4. Render Smart Recommendation Cards - Bento Grid Archetype
+ * 3. Render Smart Recommendation Cards
  */
 function renderRecommendationCards() {
   const { bestOverall, bestValue, closest, highestLots } = state.recommendations;
@@ -785,7 +759,7 @@ function renderRecommendationCards() {
       <div class="col-span-full p-8 bg-white border-2 border-slate-900 rounded-3xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] text-center text-slate-500">
         <span class="material-symbols-outlined text-4xl text-slate-400 mb-2">sentiment_dissatisfied</span>
         <p class="font-extrabold text-slate-800 text-base">No carparks found within ${state.radiusKm} km for this vehicle type.</p>
-        <p class="text-xs text-slate-500 mt-1">Try expanding your distance radius to 2.5 km or switching vehicle type filter.</p>
+        <p class="text-xs text-slate-500 mt-1">Try expanding your search radius to 2.5 km or 5.0 km.</p>
       </div>
     `;
     return;
@@ -794,8 +768,8 @@ function renderRecommendationCards() {
   const recConfigs = [
     {
       title: "Top Pick",
-      badge: "Smart Recommendation",
-      badgeClass: "bg-emerald-100 text-emerald-800 border-2 border-emerald-600",
+      badge: "Best Overall Pick",
+      badgeClass: "bg-emerald-100 text-emerald-900 border-2 border-emerald-600",
       bgClass: "bg-white",
       icon: "verified",
       data: bestOverall,
@@ -803,8 +777,8 @@ function renderRecommendationCards() {
     },
     {
       title: "Best Value",
-      badge: "Lowest Fee",
-      badgeClass: "bg-blue-100 text-blue-800 border-2 border-blue-600",
+      badge: "Lowest Rate",
+      badgeClass: "bg-blue-100 text-blue-900 border-2 border-blue-600",
       bgClass: "bg-white",
       icon: "savings",
       data: bestValue || bestOverall,
@@ -812,16 +786,16 @@ function renderRecommendationCards() {
     },
     {
       title: "Closest Walk",
-      badge: "Best Proximity",
+      badge: "Shortest Walk",
       badgeClass: "bg-amber-100 text-amber-900 border-2 border-amber-600",
-      bgClass: "bg-amber-50",
+      bgClass: "bg-white",
       icon: "directions_walk",
       data: closest || bestOverall,
       desc: "Shortest walking distance to destination"
     },
     {
-      title: "Highest Availability",
-      badge: "Max Buffer",
+      title: "Highest Vacancy",
+      badge: "Maximum Lots",
       badgeClass: "bg-purple-100 text-purple-900 border-2 border-purple-600",
       bgClass: "bg-white",
       icon: "space_dashboard",
@@ -904,7 +878,7 @@ function renderRecommendationCards() {
 }
 
 /**
- * 5. Render List & Rates Table - Bento Grid Cards
+ * 4. Render Carpark Directory & Rates List
  */
 function renderCarparkList() {
   let list = [...state.carparksWithinRadius];
@@ -932,15 +906,12 @@ function renderCarparkList() {
     list.sort((a, b) => b.overallScore - a.overallScore);
   }
 
-  elements.viewCountBadge.textContent = `${list.length} carparks in ${state.radiusKm} km`;
-  elements.mapRadiusHint.textContent = `1.0 km radius (${list.length} locations)`;
-
   if (list.length === 0) {
     elements.carparkListItems.innerHTML = `
-      <div class="p-8 bg-white border-2 border-slate-900 rounded-3xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] text-center text-slate-500">
+      <div class="col-span-full p-8 bg-white border-2 border-slate-900 rounded-3xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] text-center text-slate-500">
         <span class="material-symbols-outlined text-4xl text-slate-400 mb-2">search_off</span>
-        <p class="font-black text-slate-800 text-base">No carparks found matching your criteria.</p>
-        <p class="text-xs text-slate-400 mt-1">Try resetting search keywords or expanding your radius to 2.5 km or 5.0 km.</p>
+        <p class="font-black text-slate-800 text-base">No carparks found matching your filters.</p>
+        <p class="text-xs text-slate-400 mt-1">Try expanding radius or resetting search keywords.</p>
       </div>
     `;
     return;
@@ -984,15 +955,15 @@ function renderCarparkList() {
             </h3>
             <p class="text-xs text-slate-500 flex items-center gap-2 font-medium">
               <span>${cp.Area}</span> &bull;
-              <span class="font-bold text-slate-800">${(cp.distanceKm * 1000).toFixed(0)}m from destination (~${cp.walkTimeMins} min walk)</span>
+              <span class="font-bold text-slate-800">${(cp.distanceKm * 1000).toFixed(0)}m from destination (~${cp.walkTimeMins}m walk)</span>
             </p>
           </div>
 
-          <!-- Live Available Lots Pill - Bento Badge -->
+          <!-- Live Available Lots Pill -->
           <div class="text-right flex-shrink-0">
-            <div class="px-3.5 py-2 rounded-2xl ${lotBadgeClass} text-right shadow-[1px_1px_0px_0px_rgba(15,23,42,1)]">
-              <span class="text-xl font-black block leading-tight">${cp.AvailableLots}</span>
-              <span class="text-[9px] uppercase font-black tracking-wider block">Available</span>
+            <div class="px-3 py-1.5 rounded-2xl ${lotBadgeClass} text-right shadow-[1px_1px_0px_0px_rgba(15,23,42,1)]">
+              <span class="text-lg font-black block leading-tight">${cp.AvailableLots}</span>
+              <span class="text-[8px] uppercase font-black tracking-wider block">Available</span>
             </div>
             <span class="text-[10px] text-slate-400 font-bold mt-1 block">${occupancyRate}% full</span>
           </div>
@@ -1055,7 +1026,7 @@ function renderCarparkList() {
 }
 
 /**
- * 6. Render Interactive Leaflet Map Pins
+ * 5. Render Interactive Leaflet Map Pins
  */
 function renderMapMarkers() {
   if (!state.carparkMarkersLayer) return;
@@ -1068,7 +1039,7 @@ function renderMapMarkers() {
     const lotBgColor =
       cp.AvailableLots > 30 ? "#059669" : cp.AvailableLots >= 5 ? "#d97706" : "#dc2626";
 
-    // Custom HTML Pin with Available Lot count badge & Bento border
+    // Custom HTML Pin with Available Lot count badge
     const markerHtml = `
       <div class="flex flex-col items-center cursor-pointer transform hover:scale-110 transition">
         <div class="px-2 py-0.5 rounded-full text-white font-black text-[11px] shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] border-2 border-slate-900 flex items-center gap-1" style="background-color: ${lotBgColor}">
@@ -1086,7 +1057,7 @@ function renderMapMarkers() {
       iconAnchor: [22, 28]
     });
 
-    const marker = L.marker([cp.latitude, cp.longitude], { icon })
+    L.marker([cp.latitude, cp.longitude], { icon })
       .addTo(state.carparkMarkersLayer)
       .bindPopup(`
         <div class="text-xs space-y-2 p-1">
@@ -1103,7 +1074,7 @@ function renderMapMarkers() {
               onclick="window.showCarparkDetails('${cp.CarParkID}')"
               class="flex-1 px-3 py-1.5 bg-blue-600 text-white font-black rounded-xl border-2 border-slate-900 shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] hover:bg-blue-700 text-center block cursor-pointer"
             >
-              Full Rate Card
+              Rate Card
             </button>
             <button
               type="button"
@@ -1120,7 +1091,7 @@ function renderMapMarkers() {
 }
 
 /**
- * 7. Update LTA DataMall Connection Status
+ * 6. Update LTA DataMall Connection Status
  */
 function renderSyncStatus() {
   if (state.syncSource === "LTA_DATAMALL_LIVE") {
@@ -1135,20 +1106,17 @@ function renderSyncStatus() {
 }
 
 /**
- * 8. Center Map on specific carpark
+ * 7. Center Map on specific carpark
  */
 window.centerOnCarpark = function (lat, lng, carparkId) {
   if (state.map) {
     state.map.setView([lat, lng], 17);
-  }
-  // If in list-only view on mobile, switch to split
-  if (state.activeView === "list") {
-    switchView("split");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 };
 
 /**
- * 9. Open Route Steps Modal Dialog
+ * 8. Open Route Steps Modal Dialog
  */
 function openRouteStepsDialog() {
   const direct = state.routeData.directRoute;
@@ -1182,7 +1150,7 @@ function openRouteStepsDialog() {
 }
 
 /**
- * 10. Show Modal Details for Carpark - Bento Popup
+ * 9. Show Modal Details for Carpark
  */
 window.showCarparkDetails = function (carparkId) {
   const carpark = state.allEvaluatedCarparks.find((cp) => cp.CarParkID === carparkId) ||
@@ -1207,7 +1175,7 @@ window.showCarparkDetails = function (carparkId) {
       : "badge-available-low";
 
   elements.modalBodyContent.innerHTML = `
-    <!-- Live Availability Header Block - Bento Cell -->
+    <!-- Live Availability Header Block -->
     <div class="flex items-center justify-between p-5 rounded-2xl ${lotBadgeClass} shadow-[2px_2px_0px_0px_rgba(15,23,42,1)]">
       <div>
         <span class="text-[10px] uppercase font-black tracking-wider block">Live Vacancy</span>
@@ -1231,7 +1199,7 @@ window.showCarparkDetails = function (carparkId) {
       </div>
     </div>
 
-    <!-- Rates Breakdown Matrix - Bento Box -->
+    <!-- Rates Breakdown Matrix -->
     <div class="space-y-2">
       <h4 class="font-black text-slate-900 text-sm flex items-center gap-1.5">
         <span class="material-symbols-outlined text-base text-blue-600">payments</span>
@@ -1292,42 +1260,22 @@ window.showCarparkDetails = function (carparkId) {
 };
 
 /**
- * Switch View: Split / Map Only / List Only
- */
-function switchView(viewName) {
-  state.activeView = viewName;
-
-  elements.viewTabs.forEach((tab) => {
-    const isTarget = tab.id === `view-tab-${viewName}`;
-    tab.setAttribute("aria-selected", isTarget ? "true" : "false");
-    tab.className = isTarget
-      ? "view-tab-btn active px-3.5 py-1.5 text-xs font-extrabold rounded-lg bg-white text-slate-900 shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] flex items-center gap-1.5 transition cursor-pointer"
-      : "view-tab-btn px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 flex items-center gap-1.5 transition cursor-pointer";
-  });
-
-  if (viewName === "map") {
-    elements.mapColumn.className = "col-span-12 space-y-3";
-    elements.listColumn.className = "hidden";
-  } else if (viewName === "list") {
-    elements.mapColumn.className = "hidden";
-    elements.listColumn.className = "col-span-12 space-y-3";
-  } else {
-    // split
-    elements.mapColumn.className = "lg:col-span-6 space-y-3";
-    elements.listColumn.className = "lg:col-span-6 space-y-3";
-  }
-
-  // Recalculate Leaflet dimensions
-  setTimeout(() => {
-    if (state.map) state.map.invalidateSize();
-  }, 100);
-}
-
-/**
  * Event Listeners & Interactive Handlers
  */
 function setupEventListeners() {
-  // 1. Start Location Select Change
+  // 1. Primary Action: Start Trip Button
+  if (elements.startTripBtn) {
+    elements.startTripBtn.addEventListener("click", () => {
+      fetchRouteAndCarparks();
+      // Scroll smoothly to the outcome section
+      const outcomeElem = document.getElementById("outcome-heading");
+      if (outcomeElem) {
+        outcomeElem.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  }
+
+  // 2. Start Location Select Change
   elements.startLocationSelect.addEventListener("change", (e) => {
     const locId = e.target.value;
     const found = state.locations.find((l) => l.id === locId);
@@ -1338,7 +1286,7 @@ function setupEventListeners() {
     }
   });
 
-  // 2. Destination Location Select Change
+  // 3. Destination Location Select Change
   elements.locationSelect.addEventListener("change", (e) => {
     const locId = e.target.value;
     const found = state.locations.find((l) => l.id === locId);
@@ -1350,7 +1298,36 @@ function setupEventListeners() {
     }
   });
 
-  // 3. Swap Start Point & Destination Button
+  // 4. Quick Preset Start Buttons
+  elements.presetStartBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const presetId = btn.getAttribute("data-preset-start");
+      const found = state.locations.find((l) => l.id === presetId);
+      if (found) {
+        state.startLocation = found;
+        elements.startLocationSelect.value = presetId;
+        updateMapLayers();
+        fetchRouteAndCarparks();
+      }
+    });
+  });
+
+  // 5. Quick Preset Destination Buttons
+  elements.presetDestBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const presetId = btn.getAttribute("data-preset-dest");
+      const found = state.locations.find((l) => l.id === presetId);
+      if (found) {
+        state.selectedLocation = found;
+        state.activeDiversionId = null;
+        elements.locationSelect.value = presetId;
+        updateMapLayers();
+        fetchRouteAndCarparks();
+      }
+    });
+  });
+
+  // 6. Swap Start Point & Destination Button
   elements.swapLocationsBtn.addEventListener("click", () => {
     const temp = state.startLocation;
     state.startLocation = state.selectedLocation;
@@ -1364,13 +1341,13 @@ function setupEventListeners() {
     fetchRouteAndCarparks();
   });
 
-  // 4. GPS Button for Start Point
+  // 7. GPS Button for Start Point
   elements.gpsBtn.addEventListener("click", () => {
     if ("geolocation" in navigator) {
-      elements.gpsBtn.innerHTML = `<span class="material-symbols-outlined text-xs animate-spin">sync</span> GPS...`;
+      elements.gpsBtn.innerHTML = `<span class="material-symbols-outlined text-xs animate-spin">sync</span> Locating...`;
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          elements.gpsBtn.innerHTML = `<span class="material-symbols-outlined text-xs">my_location</span> GPS`;
+          elements.gpsBtn.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">my_location</span> Use GPS`;
           state.startLocation = {
             id: "gps-start",
             name: "My GPS Location",
@@ -1392,7 +1369,7 @@ function setupEventListeners() {
           fetchRouteAndCarparks();
         },
         (err) => {
-          elements.gpsBtn.innerHTML = `<span class="material-symbols-outlined text-xs">my_location</span> GPS`;
+          elements.gpsBtn.innerHTML = `<span class="material-symbols-outlined text-xs text-emerald-600">my_location</span> Use GPS`;
           console.warn("GPS Geolocation error:", err.message);
           alert("Could not access your GPS location. Please check browser location permissions or choose a preset location.");
         },
@@ -1403,28 +1380,28 @@ function setupEventListeners() {
     }
   });
 
-  // 5. Radius Select Change
+  // 8. Radius Select Change
   elements.radiusSelect.addEventListener("change", (e) => {
     state.radiusKm = parseFloat(e.target.value) || 1.0;
     updateMapLayers();
     fetchRouteAndCarparks();
   });
 
-  // 6. Vehicle Type Radio Buttons
+  // 9. Vehicle Type Radio Buttons
   elements.vehicleTabs.forEach((btn) => {
     btn.addEventListener("click", () => {
       elements.vehicleTabs.forEach((b) => {
         b.setAttribute("aria-checked", "false");
-        b.className = "vehicle-tab-btn px-2 py-1 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition cursor-pointer";
+        b.className = "vehicle-tab-btn px-1.5 py-1 text-[11px] font-bold rounded-md text-slate-600 hover:text-slate-900 transition cursor-pointer";
       });
       btn.setAttribute("aria-checked", "true");
-      btn.className = "vehicle-tab-btn px-2 py-1 text-xs font-extrabold rounded-lg bg-blue-600 text-white shadow-[1px_1px_0px_0px_rgba(15,23,42,1)] transition cursor-pointer";
+      btn.className = "vehicle-tab-btn px-1.5 py-1 text-[11px] font-extrabold rounded-md bg-blue-600 text-white transition cursor-pointer";
       state.vehicleType = btn.getAttribute("data-type") || "C";
       fetchRouteAndCarparks();
     });
   });
 
-  // 7. Stay Duration Slider
+  // 10. Stay Duration Slider
   elements.durationInput.addEventListener("input", (e) => {
     const hours = parseFloat(e.target.value) || 2.0;
     state.durationHours = hours;
@@ -1432,45 +1409,37 @@ function setupEventListeners() {
     fetchRouteAndCarparks();
   });
 
-  // 8. Agency Filter Chips
+  // 11. Agency Filter Chips
   elements.agencyChips.forEach((chip) => {
     chip.addEventListener("click", () => {
       elements.agencyChips.forEach((c) => {
-        c.className = "agency-chip px-2 py-1 rounded-lg border-2 border-slate-900 bg-white text-slate-700 font-bold hover:bg-slate-100 shadow-[1px_1px_0px_0px_rgba(15,23,42,1)] cursor-pointer text-[11px]";
+        c.className = "agency-chip px-2.5 py-1 rounded-lg border-2 border-slate-900 bg-white text-slate-700 font-bold hover:bg-slate-100 shadow-[1px_1px_0px_0px_rgba(15,23,42,1)] cursor-pointer text-[11px]";
       });
-      chip.className = "agency-chip px-2 py-1 rounded-lg border-2 border-slate-900 bg-blue-600 text-white font-extrabold shadow-[1px_1px_0px_0px_rgba(15,23,42,1)] cursor-pointer text-[11px]";
+      chip.className = "agency-chip px-2.5 py-1 rounded-lg border-2 border-slate-900 bg-blue-600 text-white font-extrabold shadow-[1px_1px_0px_0px_rgba(15,23,42,1)] cursor-pointer text-[11px]";
       state.agencyFilter = chip.getAttribute("data-agency") || "ALL";
       fetchRouteAndCarparks();
     });
   });
 
-  // 9. Search Input
+  // 12. Search Input
   elements.searchInput.addEventListener("input", (e) => {
     state.searchQuery = e.target.value;
     renderCarparkList();
   });
 
-  // 10. Sort Buttons
+  // 13. Sort Buttons
   elements.sortButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       elements.sortButtons.forEach((b) => {
-        b.className = "sort-btn px-3 py-1 rounded-xl border-2 border-slate-900 bg-white text-slate-700 font-bold hover:bg-slate-100 shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] cursor-pointer";
+        b.className = "sort-btn px-2.5 py-1 rounded-lg border-2 border-slate-900 bg-white text-slate-700 font-bold hover:bg-slate-100 shadow-[1px_1px_0px_0px_rgba(15,23,42,1)] cursor-pointer text-xs";
       });
-      btn.className = "sort-btn px-3 py-1 rounded-xl border-2 border-slate-900 bg-blue-600 text-white font-extrabold shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] cursor-pointer";
+      btn.className = "sort-btn px-2.5 py-1 rounded-lg border-2 border-slate-900 bg-blue-600 text-white font-extrabold shadow-[1px_1px_0px_0px_rgba(15,23,42,1)] cursor-pointer text-xs";
       state.sortBy = btn.getAttribute("data-sort") || "recommended";
       renderCarparkList();
     });
   });
 
-  // 11. View Switcher Tabs
-  elements.viewTabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      const viewId = tab.id.replace("view-tab-", "");
-      switchView(viewId);
-    });
-  });
-
-  // 12. View Route Steps Modal Button
+  // 14. View Route Steps Modal Button
   elements.viewStepsBtn.addEventListener("click", () => {
     openRouteStepsDialog();
   });
@@ -1479,7 +1448,7 @@ function setupEventListeners() {
     elements.routeStepsDialog.close();
   });
 
-  // 13. Manual Refresh Button
+  // 15. Manual Refresh Button
   elements.refreshDataBtn.addEventListener("click", async () => {
     elements.refreshIcon.classList.add("animate-spin");
     state.refreshCountdown = 60;
@@ -1493,7 +1462,7 @@ function setupEventListeners() {
     }
   });
 
-  // 14. Carpark Modal Close Handlers
+  // 16. Carpark Modal Close Handlers
   elements.closeModalBtn.addEventListener("click", () => {
     elements.carparkDialog.close();
   });
@@ -1523,7 +1492,9 @@ function startRefreshTimer() {
       state.refreshCountdown = 60;
       fetchRouteAndCarparks();
     }
-    elements.refreshCounter.textContent = `${state.refreshCountdown}s`;
+    if (elements.refreshCounter) {
+      elements.refreshCounter.textContent = `${state.refreshCountdown}s`;
+    }
   }, 1000);
 }
 
